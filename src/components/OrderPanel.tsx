@@ -1,42 +1,216 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Minus, Trash2, Info } from 'lucide-react';
+import { CartItem } from '../Types/CartItem';
+import { clickedContainer } from '../Types/ClickedContainer';
 
-const CartSection: React.FC = () => {
+interface CartSectionProps {
+  cartItems?: CartItem[];
+  setCartItems?: React.Dispatch<React.SetStateAction<CartItem[]>>;
+  setClickedContainer: (item: clickedContainer | null) => void;
+}
+
+const TAX_RATE = 0.18;
+
+const CartSection: React.FC<CartSectionProps> = ({ 
+  cartItems = [], 
+  setCartItems,
+  setClickedContainer,
+}) => {
+  const [selectedItem, setSelectedItem] = useState<CartItem | null>(null);
+
+  // 1. SYNC SELECTED ITEM BACK TO CART
+  useEffect(() => {
+    if (selectedItem && setCartItems) {
+      setCartItems((prevCart) =>
+        prevCart.map((item) =>
+          item.idProduit === selectedItem.idProduit ? { ...selectedItem } : item
+        )
+      );
+    }
+  }, [selectedItem, setCartItems]);
+
+  // 2. SYNC TO ACTION PAD (NUMPAD)
+  useEffect(() => {
+    if (selectedItem) {
+      setClickedContainer({
+        type: 'cartItem',
+        data: selectedItem,
+        setData: setSelectedItem,
+      });
+    }
+  }, [selectedItem, setClickedContainer]);
+
+  // 3. COMPLETE DISCOUNT & TOTAL LOGIC
+  // Raw Subtotal (Before any discounts)
+  const rawSubtotal = cartItems.reduce((acc, item) => {
+    const price = item.unitPrice ?? item.prixVente ?? 0;
+    return acc + (price * item.quantity);
+  }, 0);
+
+  // Discounted Subtotal (The actual taxable base)
+  const discountedSubtotal = cartItems.reduce((acc, item) => {
+    const price = item.unitPrice ?? item.prixVente ?? 0;
+    const discount = item.discountPercentage || 0;
+    const itemTotal = (price * (1 - discount / 100)) * item.quantity;
+    return acc + itemTotal;
+  }, 0);
+
+  const totalSavings = rawSubtotal - discountedSubtotal;
+  const taxes = Math.round(discountedSubtotal * TAX_RATE);
+  const finalTotal = Math.round(discountedSubtotal + taxes);
+  const avgDiscount = rawSubtotal > 0 ? (totalSavings / rawSubtotal) * 100 : 0;
+
+  // 4. HANDLERS
+  const handleItemClick = (item: CartItem) => {
+    setSelectedItem(item);
+  };
+
+  const updateQuantity = (id: string | undefined, delta: number) => {
+    if (!id || !setCartItems) return;
+    setCartItems(prev => prev.map(item => {
+      if (item.idProduit === id) {
+        const newQty = Math.max(0, item.quantity + delta);
+        const updated = { ...item, quantity: newQty };
+        if (selectedItem?.idProduit === id) setSelectedItem(updated);
+        return updated;
+      }
+      return item;
+    }).filter(item => item.quantity > 0));
+  };
+
+  const getDiscountAdvice = () => {
+    if (totalSavings === 0) return { text: "Aucune remise", color: "text-gray-400", bg: "bg-gray-50" };
+    if (avgDiscount > 20) return { text: "Remise élevée (Manager ?)", color: "text-orange-600", bg: "bg-orange-50" };
+    return { text: "Remise appliquée", color: "text-emerald-600", bg: "bg-emerald-50" };
+  };
+
+  const advice = getDiscountAdvice();
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-white">
-      {/* Item List */}
-      <div className="flex-1 p-4 space-y-4 overflow-y-auto">
-        <div className="flex justify-between items-start">
-          <div>
-            <h4 className="font-bold text-[var(--color-primary)]">Large Cabinet</h4>
-            <p className="text-xs text-[var(--color-secondary-gray)]">1.00 Units x $ 368.00 / Units</p>
-          </div>
-          <span className="font-bold text-[var(--color-primary)]">$ 368.00</span>
-        </div>
-        <div className="flex justify-between items-start p-2 bg-[var(--color-secondary-super-light)] rounded-md border-l-4 border-[var(--color-secondary)]">
-          <div>
-            <h4 className="font-bold text-[var(--color-primary)]">Letter Tray</h4>
-            <p className="text-xs text-[var(--color-secondary-gray)]">12.00 Units x $ 5.52 / Units</p>
-          </div>
-          <span className="font-bold text-[var(--color-primary)]">$ 66.24</span>
-        </div>
+      {/* HEADER TOOLS */}
+      <div className="px-4 py-2 border-b border-[#E5E7EB] flex justify-between items-center bg-gray-50/50">
+        <span className="text-[10px] font-black uppercase text-[#99a1af] tracking-widest">
+          Panier ({cartItems.length})
+        </span>
+        {cartItems.length > 0 && (
+          <button 
+            onClick={() => { setCartItems?.([]); setSelectedItem(null); }}
+            className="flex items-center gap-1 text-[10px] font-black text-red-500 uppercase hover:bg-red-50 px-2 py-1 rounded transition-colors"
+          >
+            <Trash2 size={12} /> Vider
+          </button>
+        )}
       </div>
 
-      {/* Totals Section */}
-      <div className="p-6 bg-[var(--color-secondary-background)] border-t border-[var(--color-secondary-light)]">
-        <div className="flex justify-end items-end flex-col">
-          <div className="text-3xl font-black text-[var(--color-primary)]">Total: $ 452.41</div>
-          <div className="text-sm text-[var(--color-secondary-gray)] font-medium">Taxes: $ 59.01</div>
-        </div>
-        
-        {/* Points display */}
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <div className="p-2 bg-white rounded border border-[var(--color-secondary-light)] text-center">
-            <p className="text-[10px] uppercase text-[var(--color-secondary-gray)]">Points Won</p>
-            <p className="font-bold text-green-600">+4524.1</p>
+      {/* ITEMS LIST */}
+      <div className="flex-1 p-2 space-y-1 overflow-y-auto">
+        {cartItems.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-[#99a1af] text-sm italic">
+            <div className="text-4xl mb-2 opacity-20">🛒</div>
+            Panier vide
           </div>
-          <div className="p-2 bg-white rounded border border-[var(--color-secondary-light)] text-center">
-            <p className="text-[10px] uppercase text-[var(--color-secondary-gray)]">New Total</p>
-            <p className="font-bold text-pink-700">4524.1</p>
+        ) : (
+          cartItems.map((item, index) => {
+            const displayUnitPrice = item.unitPrice ?? item.prixVente ?? 0;
+            const hasDiscount = (item.discountPercentage || 0) > 0;
+            const itemLineTotal = (displayUnitPrice * (1 - (item.discountPercentage || 0) / 100)) * item.quantity;
+            const isSelected = selectedItem?.idProduit === item.idProduit;
+
+            return (
+              <div
+                key={item.idProduit || index}
+                onClick={() => handleItemClick(item)}
+                className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all border-l-4 ${
+                  isSelected 
+                    ? 'bg-[#ECF3FA] border-[#03045e] shadow-sm' 
+                    : 'hover:bg-[#F6F8FC] border-transparent border-b border-[#E5E7EB] last:border-b-0'
+                }`}
+              >
+                {/* Product Image */}
+                <div className="w-12 h-12 rounded bg-white flex-shrink-0 overflow-hidden border border-[#E5E7EB]">
+                  {item.photo ? (
+                    <img src={item.photo} alt={item.nomProduit} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-xs text-[#99a1af]">📦</div>
+                  )}
+                </div>
+
+                {/* Details */}
+                <div className="flex-1 min-w-0">
+                  <h4 className={`font-bold text-sm truncate ${isSelected ? 'text-[#03045e]' : 'text-gray-700'}`}>
+                    {item.nomProduit}
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[10px] text-[#99a1af] font-bold uppercase">
+                      {displayUnitPrice.toLocaleString()} FCFA
+                    </p>
+                    {hasDiscount && (
+                      <span className="bg-red-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black animate-pulse">
+                        -{item.discountPercentage}%
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Qty Controls */}
+                <div className="flex items-center gap-1 bg-white rounded-lg p-1 border border-[#E5E7EB]" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => updateQuantity(item.idProduit, -1)} className="p-1 hover:bg-[#ECF3FA] rounded text-[#1F47E6]">
+                    {item.quantity === 1 ? <Trash2 size={14} className="text-red-500" /> : <Minus size={14} />}
+                  </button>
+                  <span className="w-8 text-center font-bold text-xs text-[#03045e]">{item.quantity}</span>
+                  <button onClick={() => updateQuantity(item.idProduit, 1)} className="p-1 hover:bg-[#ECF3FA] rounded text-[#1F47E6]">
+                    <Plus size={14} />
+                  </button>
+                </div>
+
+                {/* Line Total */}
+                <div className="w-32 text-right flex flex-col justify-center">
+                  <span className="block text-[9px] uppercase font-bold text-[#99a1af]">Total</span>
+                  {hasDiscount && (
+                    <span className="text-[10px] text-[#99a1af] line-through decoration-red-400">
+                      {(displayUnitPrice * item.quantity).toLocaleString()}
+                    </span>
+                  )}
+                  <span className={`font-black text-sm ${hasDiscount ? 'text-red-600' : 'text-[#03045e]'}`}>
+                    {Math.round(itemLineTotal).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* FOOTER AREA */}
+      <div className="p-5 bg-[#F6F8FC] border-t border-[#E5E7EB]">
+        <div className="flex justify-between items-end">
+          {/* Advice Section */}
+          <div className={`${advice.bg} p-2 rounded-lg border border-[#E5E7EB] min-w-[140px]`}>
+            <div className="flex items-center gap-1.5 mb-1">
+              <Info size={12} className={advice.color} />
+              <span className="text-[9px] font-black uppercase text-[#99a1af]">Statut Remise</span>
+            </div>
+            <p className={`text-[11px] font-bold ${advice.color}`}>{advice.text}</p>
+            {totalSavings > 0 && (
+              <p className="text-[10px] text-gray-500 font-medium">-{totalSavings.toLocaleString()} FCFA</p>
+            )}
+          </div>
+
+          {/* Money Totals */}
+          <div className="text-right">
+            {totalSavings > 0 && (
+              <div className="text-[10px] font-bold text-gray-400 line-through uppercase">
+                Brut: {rawSubtotal.toLocaleString()} FCFA
+              </div>
+            )}
+            <div className="text-xs font-bold text-[#99a1af] uppercase tracking-wider">
+              TVA (18%): {taxes.toLocaleString()} FCFA
+            </div>
+            <div className="text-3xl font-black text-[#03045e] flex items-baseline justify-end gap-1">
+              {finalTotal.toLocaleString()} 
+              <span className="text-sm font-bold text-[#1F47E6]">FCFA</span>
+            </div>
           </div>
         </div>
       </div>

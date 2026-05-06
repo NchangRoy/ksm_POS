@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@theme {
+  /* 
+    In Tailwind v4, defining variables inside @theme 
+    automatically creates utility classes like bg-primary, text-secondary, etc.
+  */
+
+  /* Primary color (deepest blue) */
+  --color-primary: #03045e;
+
+  /* Secondary (lighter shades of blue/cyan) */
+  --color-secondary: #1F47E6;
+  --color-secondary-mid: #1F47E6; 
+  --color-secondary-light: #E5E7EB;
+  --color-secondary-super-light: #ECF3FA;
+  --color-secondary-background: #F6F8FC;
+  --color-secondary-gray: #99a1af;
+}
+
+/* 
+   Note: You don't need @tailwind base/components/utilities 
+   explicitly anymore if you are using @import "tailwindcss" 
+   in the latest v4 alpha/beta versions.
+*/

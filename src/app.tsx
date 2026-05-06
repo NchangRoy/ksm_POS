@@ -1,59 +1,96 @@
 import * as React from "react"
 import { createRoot } from "react-dom/client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { Toaster } from "sonner"
 import "./index.css"
+
+import PaymentPage from "./components/Payment"
 import ActionNumpad from "./components/Calculator"
 import CartSection from "./components/OrderPanel"
 import ProductGrid from "./components/ProductGrid"
-import { User, Wifi } from 'lucide-react';
+import MainHeader from "./components/MainHeader"
 
+import { User } from 'lucide-react'
+import { clickedContainer } from "./Types/ClickedContainer"
 import { UpdatedProductResponse } from "./Types/Product"
+import { CartItem } from "./Types/CartItem"
+
 const App: React.FC = () => {
-    const [products,setProducts]=useState<UpdatedProductResponse[]>([])
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [products, setProducts] = useState<UpdatedProductResponse[]>([]);
+  const [clickedContainer, setClickedContainer] = useState<clickedContainer | undefined>(undefined);
+  const [showPayment, setShowPayment] = useState<boolean>(false);
+
+  const totalAmount = cartItems.reduce(
+    (sum, item) => sum + (item.unitPrice ?? item.prixVente ?? 0) * item.quantity, 
+    0
+  );
+
   return (
-    <div className="flex flex-col h-screen overflow-hidden text-[var(--color-primary)]">
-      {/* Minimal Header */}
-      <div className="h-12 bg-white border-b border-[var(--color-secondary-light)] flex justify-end items-center px-6 gap-6">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <div className="w-6 h-6 rounded-full bg-[var(--color-secondary-super-light)] flex items-center justify-center overflow-hidden">
-            <User size={14} />
-          </div>
-          Mitchell Admin
-        </div>
-        <Wifi size={16} className="text-green-500" />
-      </div>
+    <div className="flex flex-col h-screen overflow-hidden text-[#03045e] font-sans selection:bg-[#ECF3FA]">
+      <Toaster 
+        position="top-right" 
+        richColors 
+        toastOptions={{ style: { borderRadius: '12px' } }} 
+      />
 
-      {/* Main Container */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* LEFT SIDE: Cart + Calculator */}
-        <div className="w-[450px] flex flex-col border-r border-[var(--color-secondary-light)]">
-          <CartSection />
-          
-          {/* Action Buttons Row */}
-          <div className="grid grid-cols-3 bg-white text-[var(--color-secondary-gray)] text-[10px] uppercase font-bold text-center border-t border-[var(--color-secondary-light)]">
-            <button className="py-4 border-r border-[var(--color-secondary-light)] hover:bg-gray-50">Refund</button>
-            <button className="py-4 border-r border-[var(--color-secondary-light)] hover:bg-gray-50">Customer Note</button>
-            <button className="py-4 hover:bg-gray-50">Enter Code</button>
-          </div>
+      <MainHeader userName="Mitchell Admin" stationName="Point de Vente A" />
 
-          <ActionNumpad />
-          
-          {/* User Footer */}
-          <div className="p-4 bg-white border-t border-[var(--color-secondary-light)] flex items-center gap-3 text-[var(--color-secondary)]">
-            <User size={20} className="p-1 bg-[var(--color-secondary-super-light)] rounded-full"/>
-            <span className="font-bold text-sm underline cursor-pointer">Anita Oliver</span>
-          </div>
-        </div>
+      <div className="flex flex-1 overflow-hidden bg-[#F6F8FC]">
+        {showPayment ? (
+          /* FULL SCREEN PAYMENT VIEW */
+          <PaymentPage 
+            total={totalAmount} 
+            onBack={() => setShowPayment(false)} 
+            cartItems={cartItems}
+          />
+        ) : (
+          /* STANDARD POS VIEW */
+          <>
+            {/* LEFT SIDE: Cart + Controls */}
+            <div className="w-[450px] flex flex-col border-r border-[#E5E7EB] bg-white shadow-xl z-20">
+              <CartSection 
+                cartItems={cartItems} 
+                setCartItems={setCartItems} 
+                setClickedContainer={setClickedContainer}
+              />
+              
+              {/* Refined Action Buttons Row (5 Columns) */}
+              <div className="grid grid-cols-5 bg-white text-[#99a1af] text-[9px] uppercase font-black text-center border-t border-[#E5E7EB]">
+                <button className="py-4 border-r border-[#E5E7EB] hover:bg-[#F6F8FC] hover:text-[#1F47E6]">Refund</button>
+                <button className="py-4 border-r border-[#E5E7EB] hover:bg-[#F6F8FC] hover:text-[#1F47E6] text-[#03045e]">Customer</button>
+                <button className="py-4 border-r border-[#E5E7EB] hover:bg-[#F6F8FC] hover:text-[#1F47E6]">Note</button>
+                <button className="py-4 border-r border-[#E5E7EB] hover:bg-[#F6F8FC] hover:text-[#1F47E6]">Code</button>
+                <button className="py-4 hover:bg-[#F6F8FC] hover:text-[#1F47E6]">Receipt</button>
+              </div>
 
-        {/* RIGHT SIDE: Products */}
-        <ProductGrid 
-        
-        setProducts={(products:UpdatedProductResponse[])=>{
-            setProducts(products)
-            console.log(products)
-        }} 
-            products={products}
-            />
+              <ActionNumpad 
+                clickedContainer={clickedContainer} 
+                showPayment={showPayment} 
+                setShowPayment={setShowPayment} 
+              />
+
+              {/* User Footer */}
+              <div className="p-4 bg-white border-t border-[#E5E7EB] flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-[#ECF3FA] rounded-lg">
+                    <User size={18} className="text-[#1F47E6]"/>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-bold text-[#99a1af] uppercase leading-none mb-1">Cashier</span>
+                    <span className="font-black text-sm text-[#03045e]">Anita Oliver</span>
+                  </div>
+                </div>
+                <span className="text-[9px] font-bold text-[#E5E7EB] uppercase tracking-widest">v2.0.4-Stable</span>
+              </div>
+            </div>
+
+            {/* RIGHT SIDE: Products Grid */}
+            <div className="flex-1 bg-[#F6F8FC]">
+              <ProductGrid products={products} setCartItems={setCartItems} />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -61,12 +98,5 @@ const App: React.FC = () => {
 
 export default App;
 
-
-
 const root = createRoot(document.getElementById("root")!)
-
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-)
+root.render(<React.StrictMode><App /></React.StrictMode>)
