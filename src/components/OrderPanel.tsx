@@ -89,9 +89,9 @@ const CartSection: React.FC<CartSectionProps> = ({
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-white">
       {/* HEADER TOOLS */}
-      <div className="px-4 py-2 border-b border-[#E5E7EB] flex justify-between items-center bg-gray-50/50">
-        <span className="text-[10px] font-black uppercase text-[#99a1af] tracking-widest">
-          Panier ({cartItems.length})
+      <div className="px-5 py-3 border-b border-slate-100 flex justify-between items-center bg-white/60 backdrop-blur-md">
+        <span className="text-[11px] font-black uppercase text-[#03045e] tracking-widest flex items-center gap-2">
+          Panier <span className="bg-[#1F47E6] text-white px-2 py-0.5 rounded-full text-[10px]">{cartItems.length}</span>
         </span>
         {cartItems.length > 0 && (
           <button 
@@ -121,14 +121,14 @@ const CartSection: React.FC<CartSectionProps> = ({
               <div
                 key={item.idProduit || index}
                 onClick={() => handleItemClick(item)}
-                className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all border-l-4 ${
+                className={`flex items-center gap-3 p-3 rounded-[1rem] cursor-pointer transition-all border ${
                   isSelected 
-                    ? 'bg-[#ECF3FA] border-[#03045e] shadow-sm' 
-                    : 'hover:bg-[#F6F8FC] border-transparent border-b border-[#E5E7EB] last:border-b-0'
+                    ? 'bg-gradient-to-r from-[#ECF3FA] to-white border-[#1F47E6]/40 shadow-[0_4px_20px_-4px_rgba(31,71,230,0.2)] scale-[1.01]' 
+                    : 'bg-white hover:bg-[#F6F8FC] border-slate-100 hover:border-[#1F47E6]/20 shadow-sm hover:shadow-md'
                 }`}
               >
                 {/* Product Image */}
-                <div className="w-12 h-12 rounded bg-white flex-shrink-0 overflow-hidden border border-[#E5E7EB]">
+                <div className="w-14 h-14 rounded-xl bg-[#F6F8FC] flex-shrink-0 overflow-hidden border border-slate-100 shadow-inner">
                   {item.photo ? (
                     <img src={item.photo} alt={item.nomProduit} className="w-full h-full object-cover" />
                   ) : (
@@ -154,12 +154,12 @@ const CartSection: React.FC<CartSectionProps> = ({
                 </div>
 
                 {/* Qty Controls */}
-                <div className="flex items-center gap-1 bg-white rounded-lg p-1 border border-[#E5E7EB]" onClick={(e) => e.stopPropagation()}>
-                  <button onClick={() => updateQuantity(item.idProduit, -1)} className="p-1 hover:bg-[#ECF3FA] rounded text-[#1F47E6]">
+                <div className="flex items-center gap-1 bg-[#F6F8FC] rounded-xl p-1 border border-slate-100 shadow-inner" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => updateQuantity(item.idProduit, -1)} className="p-1.5 hover:bg-white rounded-lg text-[#1F47E6] hover:shadow-sm transition-all">
                     {item.quantity === 1 ? <Trash2 size={14} className="text-red-500" /> : <Minus size={14} />}
                   </button>
-                  <span className="w-8 text-center font-bold text-xs text-[#03045e]">{item.quantity}</span>
-                  <button onClick={() => updateQuantity(item.idProduit, 1)} className="p-1 hover:bg-[#ECF3FA] rounded text-[#1F47E6]">
+                  <span className="w-6 text-center font-black text-xs text-[#03045e]">{item.quantity}</span>
+                  <button onClick={() => updateQuantity(item.idProduit, 1)} className="p-1.5 hover:bg-white rounded-lg text-[#1F47E6] hover:shadow-sm transition-all">
                     <Plus size={14} />
                   </button>
                 </div>
@@ -183,10 +183,10 @@ const CartSection: React.FC<CartSectionProps> = ({
       </div>
 
       {/* FOOTER AREA */}
-      <div className="p-5 bg-[#F6F8FC] border-t border-[#E5E7EB]">
+      <div className="p-6 bg-white/80 backdrop-blur-xl border-t border-slate-100 shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.05)]">
         <div className="flex justify-between items-end">
           {/* Advice Section */}
-          <div className={`${advice.bg} p-2 rounded-lg border border-[#E5E7EB] min-w-[140px]`}>
+          <div className={`${advice.bg} p-3 rounded-2xl border border-white/50 min-w-[150px] shadow-sm`}>
             <div className="flex items-center gap-1.5 mb-1">
               <Info size={12} className={advice.color} />
               <span className="text-[9px] font-black uppercase text-[#99a1af]">Statut Remise</span>

@@ -1,0 +1,28 @@
+# ApiResponseListTrainingBudgetResponse
+
+
+## Properties
+
+Name | Type | Description | Notes
+------------ | ------------- | ------------- | -------------
+**success** | **boolean** |  | [optional] [default to undefined]
+**data** | [**Array&lt;TrainingBudgetResponse&gt;**](TrainingBudgetResponse.md) |  | [optional] [default to undefined]
+**message** | **string** |  | [optional] [default to undefined]
+**errorCode** | **string** |  | [optional] [default to undefined]
+**timestamp** | **string** |  | [optional] [default to undefined]
+
+## Example
+
+```typescript
+import { ApiResponseListTrainingBudgetResponse } from './api';
+
+const instance: ApiResponseListTrainingBudgetResponse = {
+    success,
+    data,
+    message,
+    errorCode,
+    timestamp,
+};
+```
+
+[[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

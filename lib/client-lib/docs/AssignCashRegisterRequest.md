@@ -1,0 +1,20 @@
+# AssignCashRegisterRequest
+
+
+## Properties
+
+Name | Type | Description | Notes
+------------ | ------------- | ------------- | -------------
+**cashierId** | **string** |  | [default to undefined]
+
+## Example
+
+```typescript
+import { AssignCashRegisterRequest } from './api';
+
+const instance: AssignCashRegisterRequest = {
+    cashierId,
+};
+```
+
+[[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
