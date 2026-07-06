@@ -1,0 +1,198 @@
+// Talks directly to the account app backend (the same one the main Billing
+// Next.js frontend uses) — no mocks. Login issues a real seller session;
+// products/clients are fetched for that seller's organization.
+
+const BASE_URL = "http://localhost:8080";
+
+export interface SellerSession {
+    accessToken: string;
+    id: string;
+    username: string;
+    role?: string;
+    organizationId: string;
+    organizationName?: string;
+    organizationLogoUri?: string;
+    agency?: string;
+    agencyId?: string;
+    agencyAddress?: string;
+    agencyCity?: string;
+    salePoint?: string;
+    salesPointId?: string;
+    taxNumber?: string;
+    organizationEmail?: string;
+    uiPermissions?: Record<string, unknown>;
+    permittedSaleSizes?: string[];
+    mustChangePassword?: boolean;
+}
+
+async function handle<T>(res: Response): Promise<T> {
+    if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || `Request failed: ${res.status}`);
+    }
+    return res.json() as Promise<T>;
+}
+
+// The seller auth endpoints reply with a capitalized "Id" (and "Permissions")
+// — an intentional, pre-existing contract the main Billing frontend already
+// depends on (see the backend's SellerAuthResponse). Normalized here so the
+// rest of this app can just use session.id like anywhere else.
+function normalizeSellerSession(raw: any): SellerSession {
+    return { ...raw, id: raw.id ?? raw.Id };
+}
+
+export async function loginSeller(username: string, password: string): Promise<SellerSession> {
+    const res = await fetch(`${BASE_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+    });
+    return normalizeSellerSession(await handle<any>(res));
+}
+
+// Quick POS login: organization + 5-digit PIN, no password. The organizationId
+// comes from whichever seller last did a full credentials login on this
+// terminal (cached in localStorage) — a PIN alone isn't enough since PINs are
+// only unique per-organization, not globally.
+export async function loginByPin(organizationId: string, pin: string): Promise<SellerSession> {
+    const res = await fetch(`${BASE_URL}/api/auth/login-pin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizationId, pin }),
+    });
+    return normalizeSellerSession(await handle<any>(res));
+}
+
+export async function getProducts(session: SellerSession): Promise<any[]> {
+    const res = await fetch(`${BASE_URL}/api/products/organization/${session.organizationId}`, {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+    });
+    return handle<any[]>(res);
+}
+
+export async function getClients(session: SellerSession): Promise<any[]> {
+    const res = await fetch(`${BASE_URL}/api/tiers/clients`, {
+        headers: {
+            Authorization: `Bearer ${session.accessToken}`,
+            "X-Organization-ID": session.organizationId,
+        },
+    });
+    return handle<any[]>(res);
+}
+
+export interface PosSession {
+    id: string;
+    salesPointId: string;
+    organizationId: string;
+    agencyId?: string;
+    sellerId: string;
+    status: "PENDING" | "OPEN" | "SUSPENDED" | "CLOSED" | "CANCELLED" | "REOPENED";
+    openingAmount?: number;
+    closingAmount?: number;
+    startTime?: string;
+    endTime?: string;
+    loginTime?: string;
+    logoutTime?: string;
+    locked?: boolean;
+}
+
+// Either a session already OPEN for this seller (e.g. they logged back in
+// mid-shift without logging out) or the one PENDING session scheduled for
+// them — the gate resumes straight into OPEN ones and only asks to "Start"
+// a PENDING one. If neither exists, access is blocked entirely.
+export async function getActiveOrPendingSession(session: SellerSession): Promise<{ session: PosSession; alreadyOpen: boolean } | null> {
+    const res = await fetch(
+        `${BASE_URL}/api/sessions?sellerId=${session.id}&organizationId=${session.organizationId}`,
+        { headers: { Authorization: `Bearer ${session.accessToken}` } }
+    );
+    const sessions = await handle<PosSession[]>(res);
+    const open = sessions.find((s) => s.status === "OPEN");
+    if (open) return { session: open, alreadyOpen: true };
+    const pending = sessions.find((s) => s.status === "PENDING");
+    if (pending) return { session: pending, alreadyOpen: false };
+    return null;
+}
+
+export async function startSession(session: SellerSession, sessionId: string): Promise<PosSession> {
+    const res = await fetch(`${BASE_URL}/api/sessions/${sessionId}/start`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+    });
+    return handle<PosSession>(res);
+}
+
+// Persists a real invoice in the backend — called once a POS payment succeeds.
+// Mirrors the account app's SettingService.composeNumber exactly (see
+// SettingService.java) — generated here instead of relying on the backend to
+// fill it in, since the backend's own Facture-creation path doesn't generate
+// one at all (only Devis creation does, server-side).
+interface SequenceSetting {
+    typeNumerotation?: string;
+    includeOrgCode?: boolean;
+    orgCode?: string;
+    includeBranchCode?: boolean;
+    branchCode?: string;
+    includeTva?: boolean;
+    includeDate?: boolean;
+    randomSeq4?: boolean;
+}
+
+const DOC_TYPE_CODES: Record<string, string> = {
+    DEVIS: "QUO",
+    FACTURE: "INV",
+};
+
+async function getNumberingSetting(session: SellerSession, type: "DEVIS" | "FACTURE"): Promise<SequenceSetting | undefined> {
+    const res = await fetch(`${BASE_URL}/api/settings/organization/${session.organizationId}/numbering`, {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+    });
+    const settings = await handle<SequenceSetting[]>(res);
+    return settings.find((s) => s.typeNumerotation === type);
+}
+
+function composeDocumentNumber(setting: SequenceSetting | undefined, type: "DEVIS" | "FACTURE", hasTva: boolean): string {
+    const segments: string[] = [];
+    if (setting?.includeOrgCode && setting.orgCode) segments.push(setting.orgCode.toUpperCase());
+    segments.push(DOC_TYPE_CODES[type] ?? "DOC");
+    if (setting?.includeBranchCode && setting.branchCode) segments.push(setting.branchCode.toUpperCase());
+    if (setting?.includeTva) segments.push(hasTva ? "T" : "NT");
+    if (setting?.includeDate) {
+        const d = new Date();
+        const pad = (n: number) => String(n).padStart(2, "0");
+        segments.push(`${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`);
+    }
+    if (setting?.randomSeq4) segments.push(String(Math.floor(Math.random() * 10000)).padStart(4, "0"));
+    return segments.join("-");
+}
+
+export async function generateDocumentNumber(session: SellerSession, type: "DEVIS" | "FACTURE", hasTva: boolean): Promise<string> {
+    const setting = await getNumberingSetting(session, type);
+    return composeDocumentNumber(setting, type, hasTva);
+}
+
+export async function createFacture(session: SellerSession, request: any): Promise<any> {
+    const res = await fetch(`${BASE_URL}/api/factures`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.accessToken}`,
+            "X-Organization-ID": session.organizationId,
+        },
+        body: JSON.stringify(request),
+    });
+    return handle<any>(res);
+}
+
+// Persists a real quotation in the backend — no payment involved.
+export async function createDevis(session: SellerSession, request: any): Promise<any> {
+    const res = await fetch(`${BASE_URL}/api/devis`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.accessToken}`,
+            "X-Organization-ID": session.organizationId,
+        },
+        body: JSON.stringify(request),
+    });
+    return handle<any>(res);
+}

@@ -1,9 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { OrganizationResponse, AgencyResponse, SalesPointResponse } from '../Types/org_data';
-import { EmployeeResponse } from '../Types/Seller';
+import React, { useState, useEffect } from 'react';
 import {
   ChevronLeft,
-  User,
   CreditCard,
   Banknote,
   Smartphone,
@@ -15,49 +12,53 @@ import {
 } from 'lucide-react';
 import ActionNumpad from './Calculator';
 import { CartItem } from '../Types/CartItem';
-import { GenerateReceipt } from '../util/RecietpGen';
+import { ClientResponse } from '../Types/Client';
+import { SellerSession, createFacture, getClients, generateDocumentNumber } from '../lib/api';
+import { generateReceiptHTML } from '../printGenerators/receiptPrint';
 import { toast } from 'sonner';
 
 interface PaymentPageProps {
   total: number;
   onBack: () => void;
-  cartItems?: CartItem[]
+  cartItems?: CartItem[];
+  session?: SellerSession;
+  selectedCustomer?: ClientResponse | null;
+  onPaymentComplete?: () => void;
 }
 
-
+// Falls back to when no customer was picked at the register — must already
+// exist in the org (see the "Anonymous Customer" client created for testing).
+const ANONYMOUS_CUSTOMER_CODE = 'CLI-ANON-000';
 
 export const calculateCartGrandTotal = (items: CartItem[]): number => {
   const grandTotal = items.reduce((acc, item) => {
-    // Calculate the price for a single unit after discount
     const discountedUnitPrice = item.unitPrice * (1 - item.discountPercentage / 100);
-
-    // Add the total for this line item to the accumulator
     return acc + (discountedUnitPrice * item.quantity);
   }, 0);
-
-  // Return formatted to 2 decimal places as a number
-  //including tva
+  // including tva
   return Math.round(grandTotal * 118) / 100;
 };
 
+const MODE_REGLEMENT: Record<string, string> = {
+  card: 'CARTE_BANCAIRE',
+  cash: 'ESPECES',
+  mobile: 'MOBILE_MONEY',
+  invoice: 'AUTRE',
+};
 
-
-
-const PaymentPage: React.FC<PaymentPageProps> = ({ total, onBack, cartItems }) => {
+const PaymentPage: React.FC<PaymentPageProps> = ({ total, onBack, cartItems, session, selectedCustomer, onPaymentComplete }) => {
   const [method, setMethod] = useState('card');
-  const [paymentStatus, setPaymentStatus] = useState<'pending' | 'processing' | 'paid'>('pending');
+  const [paymentStatus, setPaymentStatus] = useState<'pending' | 'processing' | 'paid' | 'error'>('pending');
+  const [error, setError] = useState('');
 
   // Cash Management States
   const [receivedAmount, setReceivedAmount] = useState<string>('');
   const [changeAmount, setChangeAmount] = useState<number>(0);
   const [calculatedTotal, setCalculatedTotal] = useState<number>(total);
   const [clickedContainer, setClickedContainer] = useState<any>(undefined);
-  const [organization, setOrganization] = useState<OrganizationResponse | undefined>(undefined)
-  const [agency, setAgency] = useState<AgencyResponse | undefined>(undefined)
-  const [salesPoint, setSalesPoint] = useState<SalesPointResponse | undefined>(undefined)
-  const [employee, setEmployee] = useState<EmployeeResponse | undefined>(undefined)
   const [isPrinting, setIsPrinting] = useState(false);
-  // Sync cash input with the virtual pad container
+  const [facture, setFacture] = useState<any>(null);
+
   useEffect(() => {
     if (method === 'cash') {
       setClickedContainer({
@@ -70,25 +71,13 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ total, onBack, cartItems }) =
       setClickedContainer(undefined);
     }
   }, [method, receivedAmount]);
-  useEffect(() => {
-    const org = localStorage.getItem('organization');
-    const ag = localStorage.getItem('agency');
-    const sp = localStorage.getItem('salesPoint');
-    const sel = localStorage.getItem('seller');
-    if (org) setOrganization(JSON.parse(org));
-    if (ag) setAgency(JSON.parse(ag));
-    if (sp) setSalesPoint(JSON.parse(sp));
-    if (sel) setEmployee(JSON.parse(sel));
-  }, [])
-  // Calculate change whenever receivedAmount or total changes
+
   useEffect(() => {
     const received = parseFloat(receivedAmount) || 0;
     const change = received - calculatedTotal;
     setChangeAmount(change > 0 ? change : 0);
   }, [receivedAmount, calculatedTotal]);
 
-
-  ///will be loaded from api 
   const paymentMethods = [
     { id: 'card', label: 'Credit / Debit Card', icon: CreditCard, description: 'Visa, Mastercard, Amex' },
     { id: 'cash', label: 'Cash', icon: Banknote, description: 'Physical currency' },
@@ -96,63 +85,127 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ total, onBack, cartItems }) =
     { id: 'invoice', label: 'Invoice', icon: Receipt, description: 'Generate billing statement' },
   ];
 
-  const handlePayment = () => {
-    setPaymentStatus('processing');
-    setTimeout(() => {
-      setPaymentStatus('paid');
-    }, 1200);
-  };
   useEffect(() => {
-    console.log(cartItems)
-    setCalculatedTotal(calculateCartGrandTotal(cartItems ?? []))
-  }, [])
+    setCalculatedTotal(calculateCartGrandTotal(cartItems ?? []));
+  }, [cartItems]);
 
   const isCashValid = method === 'cash' ? (parseFloat(receivedAmount) >= total) : true;
 
-  // Generate both receipts using the shared generator
-  const receipt = useMemo(() => {
-    return GenerateReceipt(
-      organization,
-      agency,
-      salesPoint,
-      employee,
-      method,
-      parseFloat(receivedAmount) || 0,
-      changeAmount,
-      cartItems ?? []
-    );
-  }, [organization, agency, salesPoint, employee, method, receivedAmount, changeAmount, cartItems]);
+  const resolveClient = async (): Promise<ClientResponse> => {
+    if (selectedCustomer) return selectedCustomer;
+    if (!session) throw new Error('No active session.');
+    const clients = await getClients(session);
+    const anonymous = clients.find((c: ClientResponse) => c.codeClient === ANONYMOUS_CUSTOMER_CODE);
+    if (!anonymous) {
+      throw new Error("No customer selected, and no 'Anonymous Customer' found for this organization.");
+    }
+    return anonymous;
+  };
 
-  // Send ESPOS XML to printer endpoint
+  const handlePayment = async () => {
+    if (!session) {
+      setError('No active session.');
+      setPaymentStatus('error');
+      return;
+    }
+    setPaymentStatus('processing');
+    setError('');
+
+    try {
+      const client = await resolveClient();
+      const now = new Date();
+      const dueDate = new Date(now.getTime());
+      dueDate.setDate(dueDate.getDate() + 30);
+
+      const isPaidNow = method !== 'invoice';
+
+      const lignesFacture = (cartItems ?? []).map((item) => {
+        const unitPrice = item.unitPrice ?? item.prixVente ?? 0;
+        const lineTotal = unitPrice * (1 - (item.discountPercentage || 0) / 100) * item.quantity;
+        return {
+          quantite: item.quantity,
+          description: item.nomProduit,
+          debit: lineTotal,
+          credit: 0,
+          idProduit: item.idProduit,
+          nomProduit: item.nomProduit,
+          prixUnitaire: unitPrice,
+          montantTotal: lineTotal,
+        };
+      });
+
+      const montantHT = lignesFacture.reduce((acc, l) => acc + l.montantTotal, 0);
+      const montantTVA = calculatedTotal - montantHT;
+      const numeroFacture = await generateDocumentNumber(session, 'FACTURE', montantTVA > 0);
+
+      const payload = {
+        numeroFacture,
+        dateFacturation: now.toISOString(),
+        dateEcheance: dueDate.toISOString(),
+        type: 'VENTE',
+        etat: isPaidNow ? 'PAYE' : 'EN_ATTENTE',
+        idClient: client.idClient,
+        nomClient: client.raisonSociale || client.username,
+        adresseClient: client.adresse,
+        emailClient: client.email,
+        telephoneClient: client.telephone,
+        lignesFacture,
+        montantHT,
+        montantTVA,
+        montantTTC: calculatedTotal,
+        montantTotal: calculatedTotal,
+        finalAmount: calculatedTotal,
+        montantRestant: isPaidNow ? 0 : calculatedTotal,
+        applyVat: true,
+        devise: 'XAF',
+        modeReglement: MODE_REGLEMENT[method] ?? 'AUTRE',
+        organizationId: session.organizationId,
+        agencyId: session.agencyId,
+        createdBy: session.id,
+      };
+
+      const created = await createFacture(session, payload);
+      setFacture(created);
+      setPaymentStatus('paid');
+      toast.success(`Invoice ${created?.numeroFacture ?? ''} created — payment recorded.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Payment failed. Please try again.';
+      setError(msg);
+      setPaymentStatus('error');
+      toast.error(msg);
+    }
+  };
+
+  const factureHtml = facture && session ? generateReceiptHTML(facture, session) : '';
+
   const handlePrintReceipt = async () => {
+    if (!factureHtml) return;
     setIsPrinting(true);
-
-    const body = {
-      html: receipt.htmlReceipt,
-      xml: receipt.esposReceipt,
-      type: "receipt"
-    };
-
     try {
       const response = await fetch('http://127.0.0.1:3002/print', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: factureHtml, type: 'receipt' }),
       });
-
       if (response.ok) {
-        toast.success('Receipt sent to printer successfully!');
+        toast.success('Invoice sent to printer successfully!');
       } else {
         toast.error(`Printer error: ${response.statusText}`);
       }
-    } catch (error) {
-      console.error('Print error:', error);
+    } catch (err) {
+      console.error('Print error:', err);
       toast.error('Could not connect to printer. Check if the printer service is running.');
     } finally {
       setIsPrinting(false);
     }
+  };
+
+  const handleNewTransaction = () => {
+    setPaymentStatus('pending');
+    setReceivedAmount('');
+    setFacture(null);
+    onPaymentComplete?.();
+    onBack();
   };
 
   return (
@@ -209,16 +262,16 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ total, onBack, cartItems }) =
         <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl border border-white overflow-hidden">
 
           {/* STATUS HEADER */}
-          <div className={`p-8 text-center transition-colors duration-500 ${paymentStatus === 'paid' ? 'bg-emerald-500' : 'bg-slate-800'
+          <div className={`p-8 text-center transition-colors duration-500 ${paymentStatus === 'paid' ? 'bg-emerald-500' : paymentStatus === 'error' ? 'bg-red-500' : 'bg-slate-800'
             }`}>
             <h2 className="text-white font-black text-xl uppercase tracking-widest">
-              {paymentStatus === 'paid' ? 'Transaction Complete' : 'Checkout'}
+              {paymentStatus === 'paid' ? 'Transaction Complete' : paymentStatus === 'error' ? 'Payment Failed' : 'Checkout'}
             </h2>
           </div>
 
           <div className="p-10">
             {/* CASH FORM (Conditional) */}
-            {method === 'cash' && paymentStatus !== 'paid' && (
+            {method === 'cash' && paymentStatus === 'pending' && (
               <div className="mb-8 space-y-4 animate-in fade-in slide-in-from-top-4">
                 <div className="relative">
                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-2">Cash Received</label>
@@ -291,10 +344,21 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ total, onBack, cartItems }) =
                 </div>
               )}
 
+              {paymentStatus === 'error' && (
+                <div className="space-y-3">
+                  <div className="bg-red-50 text-red-600 p-4 rounded-xl text-center font-bold mb-4 border border-red-100">
+                    {error}
+                  </div>
+                  <button onClick={() => setPaymentStatus('pending')} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold">
+                    Try Again
+                  </button>
+                </div>
+              )}
+
               {paymentStatus === 'paid' && (
                 <div className="space-y-3">
                   <div className="bg-emerald-50 text-emerald-700 p-4 rounded-xl text-center font-bold mb-4 border border-emerald-100">
-                    Payment Successful!
+                    Invoice {facture?.numeroFacture} created — payment recorded.
                   </div>
                   <button
                     onClick={handlePrintReceipt}
@@ -304,7 +368,7 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ total, onBack, cartItems }) =
                     <Printer size={18} />
                     {isPrinting ? 'Sending to Printer...' : 'Print Receipt'}
                   </button>
-                  <button onClick={() => { setPaymentStatus('pending'); setReceivedAmount(''); }} className="w-full text-slate-400 font-bold py-2 text-sm">
+                  <button onClick={handleNewTransaction} className="w-full text-slate-400 font-bold py-2 text-sm">
                     New Transaction
                   </button>
                 </div>
@@ -314,11 +378,12 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ total, onBack, cartItems }) =
         </div>
       </div>
 
-      {/* RIGHT PANEL: RECEIPT PREVIEW (uses generated HTML) */}
-      <div
-        className="w-[350px] flex flex-col bg-slate-50 border-l border-slate-200 shadow-xl z-10 overflow-hidden"
-        dangerouslySetInnerHTML={{ __html: receipt.htmlReceipt }}
-      />
+      {/* RIGHT PANEL: RECEIPT PREVIEW (uses the real created facture, once available) */}
+      {facture && (
+        <div className="w-[350px] flex flex-col items-center bg-slate-50 border-l border-slate-200 shadow-xl z-10 overflow-y-auto py-6">
+          <div dangerouslySetInnerHTML={{ __html: factureHtml }} />
+        </div>
+      )}
     </div>
   );
 };

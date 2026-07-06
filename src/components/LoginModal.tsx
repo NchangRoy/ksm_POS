@@ -1,8 +1,8 @@
 import { KeyRound, ShieldCheck, ArrowLeft, User } from 'lucide-react';
 import React, { useState } from 'react';
+import { toast } from 'sonner';
 import { clickedContainer } from '../Types/ClickedContainer';
-import { MOCK_EMPLOYEES } from '../Types/Seller';
-import { MOCK_ORGANIZATION, MOCK_AGENCIES, MOCK_SALES_POINTS } from '../Types/org_data';
+import { loginSeller, loginByPin, SellerSession } from '../lib/api';
 
 const LoginModal = ({
   isOpen,
@@ -23,6 +23,7 @@ const LoginModal = ({
   const [password, setPassword] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Reset fields when method changes or modal opens/closes
   React.useEffect(() => {
@@ -35,63 +36,37 @@ const LoginModal = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setError('');
 
-    if (method === 'password') {
-      if (username === 'alice_smith') {
-        onSuccess('alice_smith');
-        localStorage.setItem("seller", JSON.stringify(MOCK_EMPLOYEES[0]))
-        const init = () => {
-          //normally a fucntion to load the org,agency and sales
-          localStorage.setItem("organization", JSON.stringify(MOCK_ORGANIZATION))
-          localStorage.setItem("agency", JSON.stringify(MOCK_AGENCIES[0]))
-          localStorage.setItem("salesPoint", JSON.stringify(MOCK_SALES_POINTS[0]))
-        }
-        init()
+    setIsSubmitting(true);
+    try {
+      let session: SellerSession;
 
-      }
-      else if (username === "fureh_mitoto") {
-        onSuccess('fureh_mitoto');
-        localStorage.setItem("seller", JSON.stringify(MOCK_EMPLOYEES[1]))
-        const init = () => {
-          //normally a fucntion to load the org,agency and sales
-          localStorage.setItem("organization", JSON.stringify(MOCK_ORGANIZATION))
-          localStorage.setItem("agency", JSON.stringify(MOCK_AGENCIES[1]))
-          localStorage.setItem("salesPoint", JSON.stringify(MOCK_SALES_POINTS[0]))
+      if (method === 'pin') {
+        const organizationId = localStorage.getItem('terminalOrganizationId') || undefined;
+        if (!organizationId) {
+          const msg = 'No organization on this terminal yet — sign in once with your username and password first.';
+          setError(msg);
+          toast.error(msg);
+          setIsSubmitting(false);
+          return;
         }
-        init()
+        session = await loginByPin(organizationId, pin);
+      } else {
+        session = await loginSeller(username, password);
       }
-      else {
-        setError('Nom d\'utilisateur ou mot de passe incorrect.');
-      }
-    } else if (method === 'pin') {
-      if (pin === '1234') {
-        onSuccess('alice_smith');
-        localStorage.setItem("seller", JSON.stringify(MOCK_EMPLOYEES[0]))
-        const init = () => {
-          //normally a fucntion to load the org,agency and sales
-          localStorage.setItem("organization", JSON.stringify(MOCK_ORGANIZATION))
-          localStorage.setItem("agency", JSON.stringify(MOCK_AGENCIES[0]))
-          localStorage.setItem("salesPoint", JSON.stringify(MOCK_SALES_POINTS[0]))
-        }
-        init()
-      }
-      else if (pin === '2345') {
-        onSuccess('fureh_mitoto');
-        localStorage.setItem("seller", JSON.stringify(MOCK_EMPLOYEES[1]))
-        const init = () => {
-          //normally a fucntion to load the org,agency and sales
-          localStorage.setItem("organization", JSON.stringify(MOCK_ORGANIZATION))
-          localStorage.setItem("agency", JSON.stringify(MOCK_AGENCIES[1]))
-          localStorage.setItem("salesPoint", JSON.stringify(MOCK_SALES_POINTS[0]))
-        }
-        init()
-      }
-      else {
-        setError('Code PIN incorrect.');
-      }
+
+      localStorage.setItem('seller', JSON.stringify(session));
+      toast.success(`Welcome back, ${session.username}!`);
+      onSuccess(session.username);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : method === 'pin' ? 'Code PIN incorrect.' : "Nom d'utilisateur ou mot de passe incorrect.";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -129,7 +104,7 @@ const LoginModal = ({
                 </div>
                 <div className="text-left">
                   <p className="font-black text-[#03045e] text-sm uppercase">Code PIN</p>
-                  <p className="text-xs text-gray-400">Connexion rapide via 4 chiffres</p>
+                  <p className="text-xs text-gray-400">Connexion rapide via 5 chiffres</p>
                 </div>
               </button>
 
@@ -154,8 +129,8 @@ const LoginModal = ({
                   <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Entrez votre PIN</label>
                   <input
                     type="password"
-                    maxLength={4}
-                    placeholder="****"
+                    maxLength={5}
+                    placeholder="•••••"
                     value={pin}
                     onFocus={() => {
                       setClickedContainer({
@@ -234,8 +209,9 @@ const LoginModal = ({
 
               <button
                 type="submit"
-                className="w-full bg-[#1F47E6] text-white py-5 rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-blue-200 hover:scale-[1.02] active:scale-[0.98] transition-all">
-                Se Connecter
+                disabled={isSubmitting}
+                className="w-full bg-[#1F47E6] text-white py-5 rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-blue-200 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100">
+                {isSubmitting ? 'Connexion…' : 'Se Connecter'}
               </button>
             </form>
           )}

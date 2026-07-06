@@ -1,27 +1,26 @@
 import React, { useState, useMemo } from 'react';
 import { Search, Home, ChevronRight, Info } from 'lucide-react';
-import { UpdatedProductResponse, produits } from '../Types/Product';
+import { UpdatedProductResponse } from '../Types/Product';
 import { CartItem } from '../Types/CartItem';
-
 import { clickedContainer } from '../Types/ClickedContainer';
 
 interface ProductGridProps {
   products?: UpdatedProductResponse[];
   setCartItems?: React.Dispatch<React.SetStateAction<CartItem[]>>;
-  setClickedContainer: (container: clickedContainer | null) => void;
+  setClickedContainer?: (container: clickedContainer) => void;
 }
 
-const ProductGrid: React.FC<ProductGridProps> = ({ setCartItems, setClickedContainer }) => {
+const ProductGrid: React.FC<ProductGridProps> = ({ products = [], setCartItems, setClickedContainer }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Tous');
 
   const categories = useMemo(() => {
-    const cats = produits.map(p => p.categorie || 'Autres');
+    const cats = products.map(p => p.categorie || 'Autres');
     return ['Tous', ...Array.from(new Set(cats))];
-  }, []);
+  }, [products]);
 
   const filteredProducts = useMemo(() => {
-    return produits.filter((product) => {
+    return products.filter((product) => {
       const matchesSearch =
         product.nomProduit?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         product.reference?.toLowerCase().includes(searchQuery.toLowerCase());
@@ -31,7 +30,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({ setCartItems, setClickedConta
 
       return matchesSearch && matchesCategory;
     });
-  }, [searchQuery, selectedCategory]);
+  }, [products, searchQuery, selectedCategory]);
 
   return (
     <div className="flex-1 flex flex-col bg-[#F6F8FC] h-full overflow-hidden">
@@ -43,26 +42,12 @@ const ProductGrid: React.FC<ProductGridProps> = ({ setCartItems, setClickedConta
           <span className="font-bold text-sm">Produits</span>
         </div>
 
-        <div className="relative w-80 group">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#99a1af] group-focus-within:text-[#1F47E6] transition-colors" size={16} />
+        <div className="relative w-80">
+          <Search className="absolute left-3 top-2.5 text-[#99a1af]" size={16} />
           <input
             value={searchQuery}
-            onFocus={() => {
-              setClickedContainer({
-                type: 'input',
-                data: searchQuery,
-                setData: setSearchQuery
-              });
-            }}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setClickedContainer({
-                type: 'input',
-                data: e.target.value,
-                setData: setSearchQuery
-              });
-            }}
-            className="w-full pl-10 pr-4 py-2 bg-[#F6F8FC] border border-transparent rounded-xl text-sm focus:outline-none focus:bg-white focus:border-[#1F47E6]/30 focus:shadow-[0_0_0_4px_rgba(31,71,230,0.1)] transition-all"
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 py-2 border border-[#E5E7EB] rounded-lg text-sm focus:outline-none focus:border-[#1F47E6]"
             placeholder="Nom ou référence..."
           />
         </div>
@@ -74,11 +59,10 @@ const ProductGrid: React.FC<ProductGridProps> = ({ setCartItems, setClickedConta
           <button
             key={cat}
             onClick={() => setSelectedCategory(cat)}
-            className={`px-5 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap shadow-sm ${
-              selectedCategory === cat
-                ? 'bg-gradient-to-r from-[#03045e] to-[#1F47E6] text-white shadow-[#1F47E6]/30 border border-transparent scale-105'
-                : 'bg-white text-[#03045e] hover:bg-blue-50 border border-[#E5E7EB] hover:border-[#1F47E6]/30'
-            }`}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap ${selectedCategory === cat
+              ? 'bg-[#03045e] text-white shadow-md shadow-blue-100'
+              : 'bg-[#F6F8FC] text-[#03045e] hover:bg-[#ECF3FA] border border-[#E5E7EB]'
+              }`}
           >
             {cat}
           </button>
@@ -132,16 +116,15 @@ const ProductCard: React.FC<{ product: UpdatedProductResponse; handleClick: (pro
   return (
     <div
       onClick={() => !isOutOfStock && handleClick(product)}
-      className={`relative h-64 bg-white/90 backdrop-blur-md border border-slate-200/60 rounded-[1.25rem] overflow-hidden flex flex-col cursor-pointer shadow-sm hover:shadow-2xl hover:shadow-[#1F47E6]/10 hover:border-[#1F47E6]/40 hover:-translate-y-1 transition-all duration-300 group ${
-        isOutOfStock ? 'opacity-60 grayscale-[0.5] cursor-not-allowed' : ''
-      }`}
+      className={`relative h-64 bg-white border border-[#E5E7EB] rounded-xl overflow-hidden flex flex-col cursor-pointer hover:shadow-lg hover:border-[#1F47E6] transition-all group ${isOutOfStock ? 'opacity-60 grayscale-[0.5] cursor-not-allowed' : ''
+        }`}
     >
       {/* Product Image */}
-      <div className="h-32 w-full bg-gradient-to-br from-[#F6F8FC] to-white flex items-center justify-center overflow-hidden border-b border-slate-100 p-2">
+      <div className="h-32 w-full bg-[#F6F8FC] flex items-center justify-center overflow-hidden border-b border-[#E5E7EB]">
         {product.photo ? (
-          <img src={product.photo} alt={product.nomProduit} className="w-full h-full object-cover rounded-xl group-hover:scale-105 transition-transform duration-500 shadow-sm" />
+          <img src={product.photo} alt={product.nomProduit} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
         ) : (
-          <span className="text-4xl opacity-50 group-hover:scale-110 transition-transform duration-300">📦</span>
+          <span className="text-4xl">📦</span>
         )}
 
         {isOutOfStock && (
@@ -178,8 +161,7 @@ const ProductCard: React.FC<{ product: UpdatedProductResponse; handleClick: (pro
               {product.prixVente?.toLocaleString()} <span className="text-[10px]">FCFA</span>
             </p>
 
-            <p className={`text-[9px] font-black mt-1.5 uppercase tracking-tighter ${
-                product.stockQuantity < 5 ? 'text-orange-500' : 'text-[#03045e]/50'
+            <p className={`text-[9px] font-black mt-1.5 uppercase tracking-tighter ${product.stockQuantity < 5 ? 'text-orange-500' : 'text-[#03045e]/50'
               }`}
             >
               Stock: {product.stockQuantity}

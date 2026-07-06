@@ -27,6 +27,9 @@ const config: ForgeConfig = {
     new WebpackPlugin({
      devContentSecurityPolicy:
   "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline' data:; img-src * data: https: http:; connect-src * ws: wss: http: https:; font-src * data:;",
+      // Default port 3000 collides with the Billing Next.js dev server.
+      port: 3010,
+      loggerPort: 9010,
       mainConfig,
       renderer: {
         config: rendererConfig,
