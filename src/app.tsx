@@ -10,28 +10,46 @@ import CartSection from "./components/OrderPanel"
 import ProductGrid from "./components/ProductGrid"
 import MainHeader from "./components/MainHeader"
 import LoginModal from "./components/LoginModal" // New Component
+import TryOutModal from "./components/TryOutModal"
 import CustomerSelectModal from "./components/CustomerSelectModal"
 import SessionGate from "./components/SessionGate"
 import QuotationPreviewModal from "./components/QuotationPreviewModal"
+import SettingsPanel, { PanelPosition } from "./components/SettingsPanel"
+import LandingScreen from "./components/LandingScreen"
 
 import { clickedContainer } from "./Types/ClickedContainer"
 import { UpdatedProductResponse } from "./Types/Product"
 import { CartItem } from "./Types/CartItem"
 import { ClientResponse } from "./Types/Client"
-import { SellerSession, getProducts, getClients, createDevis, generateDocumentNumber } from "./lib/api"
+import { SellerSession, PosSession, getProducts, getClients, createDevis, generateDocumentNumber } from "./lib/api"
 import { toast } from "sonner"
 
 const ANONYMOUS_CUSTOMER_CODE = 'CLI-ANON-000';
 
 const TAX_RATE = 0.18;
 
+const PANEL_POSITION_KEY = 'posPanelPosition';
+
 const App: React.FC = () => {
   // --- AUTH STATES ---
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [sellerName, setSellerName] = useState<string>("Session Fermée");
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+  const [isTryOutModalOpen, setIsTryOutModalOpen] = useState<boolean>(false);
   const [session, setSession] = useState<SellerSession | undefined>();
   const [sessionStarted, setSessionStarted] = useState<boolean>(false);
+  const [posSession, setPosSession] = useState<PosSession | undefined>();
+
+  // --- SETTINGS STATES ---
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [panelPosition, setPanelPosition] = useState<PanelPosition>(
+    () => (localStorage.getItem(PANEL_POSITION_KEY) as PanelPosition) || 'left'
+  );
+
+  const handleChangePanelPosition = (position: PanelPosition) => {
+    setPanelPosition(position);
+    localStorage.setItem(PANEL_POSITION_KEY, position);
+  };
 
   useEffect(() => {
     const stored = localStorage.getItem("seller")
@@ -91,6 +109,16 @@ const App: React.FC = () => {
     setSellerName(name);
     setIsLoggedIn(true);
     setIsLoginModalOpen(false);
+  };
+
+  const handleTryOutSuccess = (parsed: SellerSession) => {
+    setSession(parsed);
+    if (parsed.organizationId) {
+      localStorage.setItem("terminalOrganizationId", parsed.organizationId);
+    }
+    setSellerName(parsed.username);
+    setIsLoggedIn(true);
+    setIsTryOutModalOpen(false);
   };
 
   const handleGenerateQuotation = async () => {
@@ -175,6 +203,7 @@ const App: React.FC = () => {
     setSession(undefined);
     setIsLoggedIn(false);
     setSessionStarted(false);
+    setPosSession(undefined);
     setSellerName("Session Fermée");
     setCartItems([]); // Optional: Clear cart on logout for security
     setProducts([]);
@@ -197,33 +226,21 @@ const App: React.FC = () => {
         isLoggedIn={isLoggedIn}
         onLogout={handleLogout}
         onLoginClick={() => setIsLoginModalOpen(true)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
       <div className="flex flex-1 overflow-hidden bg-[#F6F8FC]">
         {!isLoggedIn ? (
-          /* BLOCKED STATE: Show login prompt if not logged in */
-          <div className="flex-1 flex flex-col items-center justify-center bg-white">
-            <div className="p-10 text-center space-y-6">
-              <div className="w-20 h-20 bg-[#F6F8FC] rounded-3xl flex items-center justify-center mx-auto border border-[#E5E7EB]">
-                <span className="text-4xl">🔐</span>
-              </div>
-              <div>
-                <h2 className="text-2xl font-black uppercase tracking-widest text-[#03045e]">Terminal Verrouillé</h2>
-                <p className="text-[#99a1af] font-bold mt-2">Veuillez vous identifier pour commencer la vente</p>
-              </div>
-              <button
-                onClick={() => setIsLoginModalOpen(true)}
-                className="bg-[#1F47E6] text-white px-10 py-4 rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-blue-100 hover:bg-[#03045e] transition-all"
-              >
-                Ouvrir une Session
-              </button>
-            </div>
-          </div>
+          /* LANDING STATE: marketing/overview screen with a CTA into the login modal */
+          <LandingScreen
+            onSignIn={() => setIsLoginModalOpen(true)}
+            onTryOut={() => setIsTryOutModalOpen(true)}
+          />
         ) : !sessionStarted ? (
           /* SESSION GATE: must start (or be scheduled) a session before reaching the dashboard */
           <SessionGate
             session={session!}
-            onSessionStarted={() => setSessionStarted(true)}
+            onSessionStarted={(started) => { setPosSession(started); setSessionStarted(true); }}
             onLogout={handleLogout}
           />
         ) : showPayment ? (
@@ -233,14 +250,17 @@ const App: React.FC = () => {
             onBack={() => setShowPayment(false)}
             cartItems={cartItems}
             session={session}
+            posSession={posSession}
             selectedCustomer={selectedCustomer}
             onPaymentComplete={() => { setCartItems([]); setSelectedCustomer(null); }}
           />
         ) : (
           /* STANDARD POS VIEW (Only visible when logged in) */
           <>
-            {/* LEFT SIDE: Cart + Controls */}
-            <div className="w-[450px] flex flex-col border-r border-[#E5E7EB] bg-white shadow-xl z-20">
+            {/* CART + CONTROLS PANEL — side controlled by Settings > Cart & Numpad Position */}
+            <div className={`w-[450px] flex flex-col bg-white shadow-xl z-20 ${
+              panelPosition === 'left' ? 'order-1 border-r' : 'order-2 border-l'
+            } border-[#E5E7EB]`}>
               <CartSection
                 cartItems={cartItems}
                 setCartItems={setCartItems}
@@ -289,19 +309,36 @@ const App: React.FC = () => {
               />
             </div>
 
-            {/* RIGHT SIDE: Products Grid */}
-            <div className="flex-1 bg-[#F6F8FC]">
+            {/* PRODUCTS GRID */}
+            <div className={`flex-1 bg-[#F6F8FC] ${panelPosition === 'left' ? 'order-2' : 'order-1'}`}>
               <ProductGrid products={products} setCartItems={setCartItems} setClickedContainer={setClickedContainer} />
             </div>
           </>
         )}
       </div>
 
+      {/* SETTINGS PANEL LAYER */}
+      <SettingsPanel
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        panelPosition={panelPosition}
+        onChangePanelPosition={handleChangePanelPosition}
+      />
+
       {/* LOGIN MODAL LAYER */}
       <LoginModal
         isOpen={isLoginModalOpen}
         onClose={() => setIsLoginModalOpen(false)}
         onSuccess={handleLoginSuccess}
+        clickedContainer={clickedContainer}
+        setClickedContainer={setClickedContainer}
+      />
+
+      {/* TRY OUT MODAL LAYER */}
+      <TryOutModal
+        isOpen={isTryOutModalOpen}
+        onClose={() => setIsTryOutModalOpen(false)}
+        onSuccess={handleTryOutSuccess}
         clickedContainer={clickedContainer}
         setClickedContainer={setClickedContainer}
       />
@@ -324,7 +361,7 @@ const App: React.FC = () => {
       />
 
       {/* MODAL ACTION NUMPAD FOR LOGIN / OTHER INPUTS */}
-      {isLoginModalOpen && clickedContainer && (
+      {(isLoginModalOpen || isTryOutModalOpen) && clickedContainer && (
         <div className="fixed bottom-0 left-0 right-0 z-[110] border-t border-[#E5E7EB] shadow-2xl p-4 animate-in slide-in-from-bottom duration-300">
           <div className="max-w-md mx-auto">
             <ActionNumpad

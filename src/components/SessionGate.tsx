@@ -5,7 +5,7 @@ import { SellerSession, PosSession, getActiveOrPendingSession, startSession } fr
 
 interface SessionGateProps {
     session: SellerSession;
-    onSessionStarted: () => void;
+    onSessionStarted: (posSession: PosSession) => void;
     onLogout: () => void;
 }
 
@@ -22,7 +22,7 @@ const SessionGate: React.FC<SessionGateProps> = ({ session, onSessionStarted, on
                 if (cancelled) return;
                 if (result?.alreadyOpen) {
                     // Already running (e.g. re-logged in mid-shift) — resume straight in, no need to "start" it again.
-                    onSessionStarted();
+                    onSessionStarted(result.session);
                     return;
                 }
                 setPending(result?.session ?? null);
@@ -42,9 +42,9 @@ const SessionGate: React.FC<SessionGateProps> = ({ session, onSessionStarted, on
         setIsStarting(true);
         setError('');
         try {
-            await startSession(session, pending.id);
+            const started = await startSession(session, pending.id);
             toast.success('Session started.');
-            onSessionStarted();
+            onSessionStarted(started);
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Failed to start session.';
             setError(msg);

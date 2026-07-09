@@ -6,14 +6,16 @@ interface MainHeaderProps {
   stationName?: string;
   onLogout: () => void;
   onLoginClick: () => void;
+  onOpenSettings: () => void;
   isLoggedIn: boolean;
 }
 
-const MainHeader: React.FC<MainHeaderProps> = ({ 
-  sellerName = "Chargement...", 
+const MainHeader: React.FC<MainHeaderProps> = ({
+  sellerName = "Chargement...",
   stationName = "Caisse Principale",
   onLogout,
   onLoginClick,
+  onOpenSettings,
   isLoggedIn
 }) => {
   const [time, setTime] = useState(new Date());
@@ -82,7 +84,10 @@ const MainHeader: React.FC<MainHeaderProps> = ({
             {/* DROPDOWN MENU */}
             {isDropdownOpen && (
               <div className="absolute right-0 mt-2 w-48 bg-white border border-[#E5E7EB] rounded-xl shadow-xl py-2 animate-in fade-in slide-in-from-top-2">
-                <button className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-600 hover:bg-[#F6F8FC] hover:text-[#1F47E6] transition-colors">
+                <button
+                  onClick={() => { onOpenSettings(); setIsDropdownOpen(false); }}
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-600 hover:bg-[#F6F8FC] hover:text-[#1F47E6] transition-colors"
+                >
                   <Settings size={16} /> Paramètres
                 </button>
                 <div className="h-[1px] bg-[#E5E7EB] my-1" />

@@ -13,7 +13,7 @@ import {
 import ActionNumpad from './Calculator';
 import { CartItem } from '../Types/CartItem';
 import { ClientResponse } from '../Types/Client';
-import { SellerSession, createFacture, getClients, generateDocumentNumber } from '../lib/api';
+import { SellerSession, PosSession, createFacture, getClients, generateDocumentNumber } from '../lib/api';
 import { generateReceiptHTML } from '../printGenerators/receiptPrint';
 import { toast } from 'sonner';
 
@@ -22,6 +22,7 @@ interface PaymentPageProps {
   onBack: () => void;
   cartItems?: CartItem[];
   session?: SellerSession;
+  posSession?: PosSession;
   selectedCustomer?: ClientResponse | null;
   onPaymentComplete?: () => void;
 }
@@ -46,7 +47,7 @@ const MODE_REGLEMENT: Record<string, string> = {
   invoice: 'AUTRE',
 };
 
-const PaymentPage: React.FC<PaymentPageProps> = ({ total, onBack, cartItems, session, selectedCustomer, onPaymentComplete }) => {
+const PaymentPage: React.FC<PaymentPageProps> = ({ total, onBack, cartItems, session, posSession, selectedCustomer, onPaymentComplete }) => {
   const [method, setMethod] = useState('card');
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'processing' | 'paid' | 'error'>('pending');
   const [error, setError] = useState('');
@@ -162,6 +163,8 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ total, onBack, cartItems, ses
         organizationId: session.organizationId,
         agencyId: session.agencyId,
         createdBy: session.id,
+        originType: 'POS',
+        sessionId: posSession?.id,
       };
 
       const created = await createFacture(session, payload);

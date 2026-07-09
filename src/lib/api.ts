@@ -50,6 +50,40 @@ export async function loginSeller(username: string, password: string): Promise<S
     return normalizeSellerSession(await handle<any>(res));
 }
 
+export interface KernelOrganizationSummary {
+    id: string;
+    displayName?: string;
+    legalName?: string;
+    shortName?: string;
+    email?: string;
+    taxNumber?: string;
+    logoUri?: string;
+    isActive?: boolean;
+}
+
+export type TryOutResult =
+    | { requiresOrganizationSelection: true; availableOrganizations: KernelOrganizationSummary[] }
+    | { requiresOrganizationSelection: false; session: SellerSession };
+
+// "Try Out": authenticates directly against Kernel using an existing
+// Kernel-registered account, auto-provisioning/reusing a local seller so the
+// rest of the app behaves like a normal login. If the account belongs to more
+// than one organization, the backend returns requiresOrganizationSelection
+// with the org list instead of a session — resubmit with organizationId once
+// the user picks one.
+export async function tryOut(username: string, password: string, organizationId?: string): Promise<TryOutResult> {
+    const res = await fetch(`${BASE_URL}/api/auth/try-out`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, ...(organizationId ? { organizationId } : {}) }),
+    });
+    const data = await handle<any>(res);
+    if (data.requiresOrganizationSelection) {
+        return { requiresOrganizationSelection: true, availableOrganizations: data.availableOrganizations ?? [] };
+    }
+    return { requiresOrganizationSelection: false, session: normalizeSellerSession(data) };
+}
+
 // Quick POS login: organization + 5-digit PIN, no password. The organizationId
 // comes from whichever seller last did a full credentials login on this
 // terminal (cached in localStorage) — a PIN alone isn't enough since PINs are
@@ -70,7 +104,24 @@ export async function getProducts(session: SellerSession): Promise<any[]> {
     return handle<any[]>(res);
 }
 
+const PRIVILEGED_ROLES = ["OWNER", "AGENCY_MANAGER"];
+
+// POS_SELLER/SELLER only see customers assigned to them as account manager;
+// OWNER/AGENCY_MANAGER see the full organization customer list.
 export async function getClients(session: SellerSession): Promise<any[]> {
+    if (session.role && !PRIVILEGED_ROLES.includes(session.role)) {
+        const res = await fetch(
+            `${BASE_URL}/api/customer-assignments/seller/${session.id}/customers?organizationId=${session.organizationId}`,
+            {
+                headers: {
+                    Authorization: `Bearer ${session.accessToken}`,
+                    "X-Organization-ID": session.organizationId,
+                },
+            }
+        );
+        return handle<any[]>(res);
+    }
+
     const res = await fetch(`${BASE_URL}/api/tiers/clients`, {
         headers: {
             Authorization: `Bearer ${session.accessToken}`,
