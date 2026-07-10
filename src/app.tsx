@@ -21,7 +21,15 @@ import { clickedContainer } from "./Types/ClickedContainer"
 import { UpdatedProductResponse } from "./Types/Product"
 import { CartItem } from "./Types/CartItem"
 import { ClientResponse } from "./Types/Client"
-import { SellerSession, PosSession, getProducts, getClients, createDevis, generateDocumentNumber } from "./lib/api"
+import { SellerSession, PosSession } from "./lib/api"
+import {
+  getProductsOfflineFirst,
+  getClientsOfflineFirst,
+  createDevisOffline,
+  generateDocumentNumberOfflineFirst,
+  isFullyOnline,
+  startSyncEngine,
+} from "./lib/offline"
 import { toast } from "sonner"
 
 const ANONYMOUS_CUSTOMER_CODE = 'CLI-ANON-000';
@@ -75,12 +83,19 @@ const App: React.FC = () => {
   // Load real products for the org once we have a session (fresh login or restored from storage)
   useEffect(() => {
     if (!session) return;
-    getProducts(session)
+    getProductsOfflineFirst(session)
       .then(setProducts)
       .catch((err) => {
         console.error("Failed to load products", err);
         toast.error("Failed to load products.");
       });
+  }, [session]);
+
+  // Background outbox sync — flushes any offline-created factures/devis once
+  // the backend is reachable again, and retries every 30s / on 'online'.
+  useEffect(() => {
+    if (!session) return;
+    return startSyncEngine();
   }, [session]);
 
   // --- CALCULATION LOGIC (Including Discounts & Taxes) ---
@@ -131,7 +146,7 @@ const App: React.FC = () => {
     try {
       let client = selectedCustomer;
       if (!client) {
-        const clients = await getClients(session);
+        const clients = await getClientsOfflineFirst(session);
         client = clients.find((c: ClientResponse) => c.codeClient === ANONYMOUS_CUSTOMER_CODE) ?? null;
         if (!client) {
           toast.error("No customer selected, and no 'Anonymous Customer' found for this organization.");
@@ -160,7 +175,7 @@ const App: React.FC = () => {
 
       const montantHT = lignesDevis.reduce((acc, l) => acc + l.montantTotal, 0);
       const montantTTC = calculateCartGrandTotal(cartItems);
-      const numeroDevis = await generateDocumentNumber(session, 'DEVIS', montantTTC > montantHT);
+      const numeroDevis = await generateDocumentNumberOfflineFirst(session, 'DEVIS', montantTTC > montantHT);
 
       const payload = {
         numeroDevis,
@@ -188,7 +203,9 @@ const App: React.FC = () => {
         createdBy: session.id,
       };
 
-      const created = await createDevis(session, payload);
+      const online = await isFullyOnline();
+      const created = await createDevisOffline(session, payload);
+      if (!online) toast.success('Quotation saved locally — will sync once back online.');
       setQuotation(created);
       setIsQuotationModalOpen(true);
     } catch (err) {

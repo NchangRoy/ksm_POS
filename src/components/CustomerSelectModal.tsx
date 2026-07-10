@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Search, X, User, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { ClientResponse } from '../Types/Client';
-import { getClients, SellerSession } from '../lib/api';
+import { SellerSession } from '../lib/api';
+import { getClientsOfflineFirst } from '../lib/offline';
 
 interface CustomerSelectModalProps {
   isOpen: boolean;
@@ -26,7 +27,7 @@ const CustomerSelectModal: React.FC<CustomerSelectModalProps> = ({
   useEffect(() => {
     if (!isOpen || !session) return;
     setLoading(true);
-    getClients(session)
+    getClientsOfflineFirst(session)
       .then(setCustomers)
       .catch((err) => {
         console.error('Failed to load customers', err);

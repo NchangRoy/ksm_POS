@@ -177,7 +177,7 @@ export async function startSession(session: SellerSession, sessionId: string): P
 // SettingService.java) — generated here instead of relying on the backend to
 // fill it in, since the backend's own Facture-creation path doesn't generate
 // one at all (only Devis creation does, server-side).
-interface SequenceSetting {
+export interface SequenceSetting {
     typeNumerotation?: string;
     includeOrgCode?: boolean;
     orgCode?: string;
@@ -193,15 +193,21 @@ const DOC_TYPE_CODES: Record<string, string> = {
     FACTURE: "INV",
 };
 
-async function getNumberingSetting(session: SellerSession, type: "DEVIS" | "FACTURE"): Promise<SequenceSetting | undefined> {
+// Exported so the offline layer can fetch-once and cache the whole array
+// instead of hitting this endpoint on every single checkout.
+export async function getNumberingSettings(session: SellerSession): Promise<SequenceSetting[]> {
     const res = await fetch(`${BASE_URL}/api/settings/organization/${session.organizationId}/numbering`, {
         headers: { Authorization: `Bearer ${session.accessToken}` },
     });
-    const settings = await handle<SequenceSetting[]>(res);
+    return handle<SequenceSetting[]>(res);
+}
+
+async function getNumberingSetting(session: SellerSession, type: "DEVIS" | "FACTURE"): Promise<SequenceSetting | undefined> {
+    const settings = await getNumberingSettings(session);
     return settings.find((s) => s.typeNumerotation === type);
 }
 
-function composeDocumentNumber(setting: SequenceSetting | undefined, type: "DEVIS" | "FACTURE", hasTva: boolean): string {
+export function composeDocumentNumber(setting: SequenceSetting | undefined, type: "DEVIS" | "FACTURE", hasTva: boolean): string {
     const segments: string[] = [];
     if (setting?.includeOrgCode && setting.orgCode) segments.push(setting.orgCode.toUpperCase());
     segments.push(DOC_TYPE_CODES[type] ?? "DOC");

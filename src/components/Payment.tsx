@@ -13,7 +13,13 @@ import {
 import ActionNumpad from './Calculator';
 import { CartItem } from '../Types/CartItem';
 import { ClientResponse } from '../Types/Client';
-import { SellerSession, PosSession, createFacture, getClients, generateDocumentNumber } from '../lib/api';
+import { SellerSession, PosSession } from '../lib/api';
+import {
+  createFactureOffline,
+  getClientsOfflineFirst,
+  generateDocumentNumberOfflineFirst,
+  isFullyOnline,
+} from '../lib/offline';
 import { generateReceiptHTML } from '../printGenerators/receiptPrint';
 import { toast } from 'sonner';
 
@@ -95,7 +101,7 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ total, onBack, cartItems, ses
   const resolveClient = async (): Promise<ClientResponse> => {
     if (selectedCustomer) return selectedCustomer;
     if (!session) throw new Error('No active session.');
-    const clients = await getClients(session);
+    const clients = await getClientsOfflineFirst(session);
     const anonymous = clients.find((c: ClientResponse) => c.codeClient === ANONYMOUS_CUSTOMER_CODE);
     if (!anonymous) {
       throw new Error("No customer selected, and no 'Anonymous Customer' found for this organization.");
@@ -137,7 +143,7 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ total, onBack, cartItems, ses
 
       const montantHT = lignesFacture.reduce((acc, l) => acc + l.montantTotal, 0);
       const montantTVA = calculatedTotal - montantHT;
-      const numeroFacture = await generateDocumentNumber(session, 'FACTURE', montantTVA > 0);
+      const numeroFacture = await generateDocumentNumberOfflineFirst(session, 'FACTURE', montantTVA > 0);
 
       const payload = {
         numeroFacture,
@@ -167,10 +173,12 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ total, onBack, cartItems, ses
         sessionId: posSession?.id,
       };
 
-      const created = await createFacture(session, payload);
+      const online = await isFullyOnline();
+      const created = await createFactureOffline(session, payload);
       setFacture(created);
       setPaymentStatus('paid');
-      toast.success(`Invoice ${created?.numeroFacture ?? ''} created — payment recorded.`);
+      const offlineMsg = online ? '' : ' (saved locally — will sync once back online)';
+      toast.success(`Invoice ${created?.numeroFacture ?? ''} created — payment recorded.${offlineMsg}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Payment failed. Please try again.';
       setError(msg);

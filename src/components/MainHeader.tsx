@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Wifi, MapPin, Clock, ChevronDown, Settings, LogOut, LogIn } from 'lucide-react';
+import { User, Wifi, WifiOff, CloudOff, MapPin, Clock, ChevronDown, Settings, LogOut, LogIn } from 'lucide-react';
+import { useOnlineStatus } from '../lib/offline';
 
 interface MainHeaderProps {
   sellerName?: string;
@@ -21,6 +22,7 @@ const MainHeader: React.FC<MainHeaderProps> = ({
   const [time, setTime] = useState(new Date());
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const { isOnline, isBackendReachable, isFullyOnline } = useOnlineStatus();
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -58,10 +60,28 @@ const MainHeader: React.FC<MainHeaderProps> = ({
 
       {/* Right: Connectivity & User Dropdown */}
       <div className="flex items-center gap-6">
-        <div className="flex items-center gap-1.5 text-[#99a1af] font-black text-[10px] uppercase tracking-widest">
-          <span className="hidden sm:inline">Connecté</span>
-          <Wifi size={14} className="text-green-500" />
-        </div>
+        {isFullyOnline ? (
+          <div className="flex items-center gap-1.5 text-[#99a1af] font-black text-[10px] uppercase tracking-widest">
+            <span className="hidden sm:inline">Connecté</span>
+            <Wifi size={14} className="text-green-500" />
+          </div>
+        ) : isOnline && !isBackendReachable ? (
+          <div
+            className="flex items-center gap-1.5 text-amber-500 font-black text-[10px] uppercase tracking-widest"
+            title="Serveur inaccessible — données locales utilisées"
+          >
+            <span className="hidden sm:inline">Serveur indisponible</span>
+            <CloudOff size={14} className="text-amber-500" />
+          </div>
+        ) : (
+          <div
+            className="flex items-center gap-1.5 text-red-500 font-black text-[10px] uppercase tracking-widest"
+            title="Mode hors ligne — synchronisation automatique au retour de la connexion"
+          >
+            <span className="hidden sm:inline">Hors ligne</span>
+            <WifiOff size={14} className="text-red-500" />
+          </div>
+        )}
 
         <div className="h-6 w-[1px] bg-[#E5E7EB]" />
 
