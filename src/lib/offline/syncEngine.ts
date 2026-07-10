@@ -3,7 +3,7 @@ import type { OutboxEntry } from './db';
 import { isFullyOnline } from './connectivity';
 import { getPendingOutbox, removeOutboxEntry, updateOutboxStatus } from './outbox';
 
-const BASE_URL = 'http://localhost:8080';
+const BASE_URL = process.env.API_BASE_URL || 'http://localhost:8080';
 
 let isSyncing = false;
 let syncListeners: Array<(count: number) => void> = [];
