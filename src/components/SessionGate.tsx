@@ -56,7 +56,7 @@ const SessionGate: React.FC<SessionGateProps> = ({ session, onSessionStarted, on
 
     if (loading) {
         return (
-            <div className="flex-1 flex items-center justify-center bg-white">
+            <div className="flex-1 flex items-center justify-center bg-[#F6F8FC]">
                 <div className="w-8 h-8 border-4 border-gray-100 border-t-[#1F47E6] rounded-full animate-spin" />
             </div>
         );
@@ -64,30 +64,34 @@ const SessionGate: React.FC<SessionGateProps> = ({ session, onSessionStarted, on
 
     if (!pending) {
         return (
-            <div className="flex-1 flex flex-col items-center justify-center bg-white">
-                <div className="p-10 text-center space-y-6 max-w-md">
-                    <div className="w-20 h-20 bg-red-50 rounded-3xl flex items-center justify-center mx-auto border border-red-100">
-                        <AlertCircle size={36} className="text-red-500" />
+            <div className="flex-1 flex flex-col items-center justify-center bg-[#F6F8FC]">
+                <div className="w-full max-w-md bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden">
+                    <div className="bg-[#03045e] p-8 text-center">
+                        <div className="w-16 h-16 bg-white/10 rounded-2xl mx-auto mb-4 flex items-center justify-center">
+                            <AlertCircle size={32} className="text-white" />
+                        </div>
+                        <h2 className="text-white text-xl font-black uppercase tracking-widest">Aucune Session</h2>
+                        <p className="text-white/60 text-xs mt-1">Rien de programmé pour l'instant</p>
                     </div>
-                    <div>
-                        <h2 className="text-2xl font-black uppercase tracking-widest text-[#03045e]">Aucune Session</h2>
-                        <p className="text-[#99a1af] font-bold mt-2">
+
+                    <div className="p-8 space-y-6 text-center">
+                        <p className="text-[#99a1af] font-bold text-sm">
                             Aucune session n'est programmée pour vous. Contactez votre responsable pour en planifier une.
                         </p>
+                        <button
+                            onClick={onLogout}
+                            className="w-full flex items-center justify-center gap-2 bg-gray-100 text-gray-500 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-gray-200 transition-all"
+                        >
+                            <LogOut size={16} /> Déconnexion
+                        </button>
                     </div>
-                    <button
-                        onClick={onLogout}
-                        className="flex items-center gap-2 mx-auto bg-gray-100 text-gray-500 px-8 py-3 rounded-2xl font-black uppercase tracking-widest hover:bg-gray-200 transition-all"
-                    >
-                        <LogOut size={16} /> Déconnexion
-                    </button>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="flex-1 flex flex-col items-center justify-center bg-white">
+        <div className="flex-1 flex flex-col items-center justify-center bg-[#F6F8FC]">
             <div className="w-full max-w-md bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden">
                 <div className="bg-[#03045e] p-8 text-center">
                     <div className="w-16 h-16 bg-white/10 rounded-2xl mx-auto mb-4 flex items-center justify-center">

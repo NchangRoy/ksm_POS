@@ -9,8 +9,8 @@ import ActionNumpad from "./components/Calculator"
 import CartSection from "./components/OrderPanel"
 import ProductGrid from "./components/ProductGrid"
 import MainHeader from "./components/MainHeader"
-import LoginModal from "./components/LoginModal" // New Component
-import TryOutModal from "./components/TryOutModal"
+import LoginScreen from "./components/LoginScreen"
+import TryOutScreen from "./components/TryOutScreen"
 import CustomerSelectModal from "./components/CustomerSelectModal"
 import SessionGate from "./components/SessionGate"
 import QuotationPreviewModal from "./components/QuotationPreviewModal"
@@ -42,8 +42,11 @@ const App: React.FC = () => {
   // --- AUTH STATES ---
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [sellerName, setSellerName] = useState<string>("Session Fermée");
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
-  const [isTryOutModalOpen, setIsTryOutModalOpen] = useState<boolean>(false);
+  const [showLoginScreen, setShowLoginScreen] = useState<boolean>(false);
+  const [showTryOutScreen, setShowTryOutScreen] = useState<boolean>(false);
+  // Tracks LoginScreen's own internal stage so the till chrome (MainHeader)
+  // can show once you're on the terminal lock screen, not the account form.
+  const [loginStage, setLoginStage] = useState<'account' | 'terminal'>('account');
   const [session, setSession] = useState<SellerSession | undefined>();
   const [sessionStarted, setSessionStarted] = useState<boolean>(false);
   const [posSession, setPosSession] = useState<PosSession | undefined>();
@@ -123,7 +126,8 @@ const App: React.FC = () => {
     }
     setSellerName(name);
     setIsLoggedIn(true);
-    setIsLoginModalOpen(false);
+    setShowLoginScreen(false);
+    setLoginStage('account');
   };
 
   const handleTryOutSuccess = (parsed: SellerSession) => {
@@ -133,7 +137,7 @@ const App: React.FC = () => {
     }
     setSellerName(parsed.username);
     setIsLoggedIn(true);
-    setIsTryOutModalOpen(false);
+    setShowTryOutScreen(false);
   };
 
   const handleGenerateQuotation = async () => {
@@ -226,7 +230,31 @@ const App: React.FC = () => {
     setProducts([]);
     setSelectedCustomer(null);
     toast.success("Signed out.");
+
+    // This terminal already knows its organization — go straight back to its
+    // lock screen instead of the marketing landing page.
+    if (localStorage.getItem("terminalOrganizationId")) {
+      setLoginStage('terminal');
+      setShowLoginScreen(true);
+    }
   };
+
+  // Auto sign-out once the scheduled session's end time has passed — without
+  // this, a seller can keep ringing up sales indefinitely past their shift,
+  // since nothing else ever re-checks posSession.endTime once the till is unlocked.
+  useEffect(() => {
+    if (!sessionStarted || !posSession?.endTime) return;
+    const endTime = new Date(posSession.endTime).getTime();
+    const checkExpiry = () => {
+      if (Date.now() >= endTime) {
+        toast.error("Your session has ended — you've been signed out.");
+        handleLogout();
+      }
+    };
+    checkExpiry(); // covers the end time having already passed by the time this effect runs
+    const interval = setInterval(checkExpiry, 30000);
+    return () => clearInterval(interval);
+  }, [sessionStarted, posSession]);
 
   return (
     <div className="flex flex-col h-screen overflow-hidden text-[#03045e] font-sans selection:bg-[#ECF3FA]">
@@ -236,23 +264,48 @@ const App: React.FC = () => {
         toastOptions={{ style: { borderRadius: '12px' } }}
       />
 
-      {/* HEADER: Receives seller name and auth status */}
-      <MainHeader
-        sellerName={sellerName}
-        stationName="Caisse Principale A"
-        isLoggedIn={isLoggedIn}
-        onLogout={handleLogout}
-        onLoginClick={() => setIsLoginModalOpen(true)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-      />
+      {/* HEADER: shown once inside the app, and on the terminal lock screen (stage
+          2 of Sign In) — the landing page and the account-level auth form still
+          carry their own nav instead */}
+      {(isLoggedIn || (showLoginScreen && loginStage === 'terminal')) && (
+        <MainHeader
+          sellerName={sellerName}
+          stationName="Caisse Principale A"
+          isLoggedIn={isLoggedIn}
+          onLogout={handleLogout}
+          onLoginClick={() => setShowLoginScreen(true)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+        />
+      )}
 
       <div className="flex flex-1 overflow-hidden bg-[#F6F8FC]">
         {!isLoggedIn ? (
-          /* LANDING STATE: marketing/overview screen with a CTA into the login modal */
-          <LandingScreen
-            onSignIn={() => setIsLoginModalOpen(true)}
-            onTryOut={() => setIsTryOutModalOpen(true)}
-          />
+          showLoginScreen ? (
+            /* LOGIN STATE: dedicated full-page sign-in, reached from the landing screen's CTA */
+            <LoginScreen
+              onBack={() => { setShowLoginScreen(false); setLoginStage('account'); }}
+              onSuccess={handleLoginSuccess}
+              onStageChange={setLoginStage}
+              initialStage={loginStage}
+              clickedContainer={clickedContainer}
+              setClickedContainer={setClickedContainer}
+            />
+          ) : showTryOutScreen ? (
+            /* TRY OUT STATE: dedicated full-page try-out, reached from the landing screen's CTA */
+            <TryOutScreen
+              onBack={() => setShowTryOutScreen(false)}
+              onSuccess={handleTryOutSuccess}
+              onSwitchToLogin={() => { setShowTryOutScreen(false); setShowLoginScreen(true); }}
+              clickedContainer={clickedContainer}
+              setClickedContainer={setClickedContainer}
+            />
+          ) : (
+            /* LANDING STATE: marketing/overview screen with a CTA into the login/try-out screens */
+            <LandingScreen
+              onSignIn={() => setShowLoginScreen(true)}
+              onTryOut={() => setShowTryOutScreen(true)}
+            />
+          )
         ) : !sessionStarted ? (
           /* SESSION GATE: must start (or be scheduled) a session before reaching the dashboard */
           <SessionGate
@@ -269,7 +322,13 @@ const App: React.FC = () => {
             session={session}
             posSession={posSession}
             selectedCustomer={selectedCustomer}
-            onPaymentComplete={() => { setCartItems([]); setSelectedCustomer(null); }}
+            onPaymentComplete={() => {
+              setCartItems([]);
+              setSelectedCustomer(null);
+              // Running tally of this session's sales, kept client-side only
+              // — the backend's closingAmount is set once at actual close-out.
+              setPosSession((prev) => prev ? { ...prev, closingAmount: (prev.closingAmount ?? 0) + finalTotal } : prev);
+            }}
           />
         ) : (
           /* STANDARD POS VIEW (Only visible when logged in) */
@@ -342,24 +401,6 @@ const App: React.FC = () => {
         onChangePanelPosition={handleChangePanelPosition}
       />
 
-      {/* LOGIN MODAL LAYER */}
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        onSuccess={handleLoginSuccess}
-        clickedContainer={clickedContainer}
-        setClickedContainer={setClickedContainer}
-      />
-
-      {/* TRY OUT MODAL LAYER */}
-      <TryOutModal
-        isOpen={isTryOutModalOpen}
-        onClose={() => setIsTryOutModalOpen(false)}
-        onSuccess={handleTryOutSuccess}
-        clickedContainer={clickedContainer}
-        setClickedContainer={setClickedContainer}
-      />
-
       {/* CUSTOMER SELECT MODAL LAYER */}
       <CustomerSelectModal
         isOpen={isCustomerModalOpen}
@@ -378,7 +419,7 @@ const App: React.FC = () => {
       />
 
       {/* MODAL ACTION NUMPAD FOR LOGIN / OTHER INPUTS */}
-      {(isLoginModalOpen || isTryOutModalOpen) && clickedContainer && (
+      {(showLoginScreen || showTryOutScreen) && clickedContainer && (
         <div className="fixed bottom-0 left-0 right-0 z-[110] border-t border-[#E5E7EB] shadow-2xl p-4 animate-in slide-in-from-bottom duration-300">
           <div className="max-w-md mx-auto">
             <ActionNumpad
