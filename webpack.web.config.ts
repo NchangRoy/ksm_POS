@@ -45,7 +45,8 @@ const config: webpack.Configuration = {
     // Static text substitution at build time — process.env.API_BASE_URL
     // never exists at runtime in a browser, this just inlines the string.
     new webpack.DefinePlugin({
-      'process.env.API_BASE_URL': JSON.stringify(process.env.API_BASE_URL || ''),
+      'process.env.API_BASE_URL': JSON.stringify(process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || ''),
+      'process.env.NEXT_PUBLIC_API_URL': JSON.stringify(process.env.NEXT_PUBLIC_API_URL || process.env.API_BASE_URL || ''),
     }),
   ],
 };

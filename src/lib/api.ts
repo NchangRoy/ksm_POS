@@ -5,7 +5,7 @@
 // Replaced at build time via webpack.web.config.ts's DefinePlugin (the plain
 // web build) or left as the localhost default for the packaged Electron app,
 // which always talks to a locally-run Billing backend during development.
-const BASE_URL = process.env.API_BASE_URL || "http://localhost:8080";
+const BASE_URL = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 export interface SellerSession {
     accessToken: string;
