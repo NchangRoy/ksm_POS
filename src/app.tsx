@@ -21,7 +21,7 @@ import { clickedContainer } from "./Types/ClickedContainer"
 import { UpdatedProductResponse } from "./Types/Product"
 import { CartItem } from "./Types/CartItem"
 import { ClientResponse } from "./Types/Client"
-import { SellerSession, PosSession } from "./lib/api"
+import { SellerSession, PosSession, parseSessionDate } from "./lib/api"
 import {
   getProductsOfflineFirst,
   getClientsOfflineFirst,
@@ -203,7 +203,7 @@ const App: React.FC = () => {
         applyVat: true,
         devise: 'XAF',
         organizationId: session.organizationId,
-        agencyId: session.agencyId,
+        agencyId: posSession?.agencyId || session.agencyId,
         createdBy: session.id,
       };
 
@@ -244,15 +244,16 @@ const App: React.FC = () => {
   // since nothing else ever re-checks posSession.endTime once the till is unlocked.
   useEffect(() => {
     if (!sessionStarted || !posSession?.endTime) return;
-    const endTime = new Date(posSession.endTime).getTime();
+    const endDate = parseSessionDate(posSession.endTime);
+    if (!endDate) return;
     const checkExpiry = () => {
-      if (Date.now() >= endTime) {
+      if (Date.now() >= endDate.getTime()) {
         toast.error("Your session has ended — you've been signed out.");
         handleLogout();
       }
     };
     checkExpiry(); // covers the end time having already passed by the time this effect runs
-    const interval = setInterval(checkExpiry, 30000);
+    const interval = setInterval(checkExpiry, 10000);
     return () => clearInterval(interval);
   }, [sessionStarted, posSession]);
 

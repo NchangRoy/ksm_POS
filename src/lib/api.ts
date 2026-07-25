@@ -91,8 +91,11 @@ export async function tryOut(username: string, password: string, organizationId?
 // comes from whichever seller last did a full credentials login on this
 // terminal (cached in localStorage) — a PIN alone isn't enough since PINs are
 // only unique per-organization, not globally.
+//
+// Backend endpoint: POST /api/auth/login/by_pin
+// Body: { organizationId: UUID, pin: string }
 export async function loginByPin(organizationId: string, pin: string): Promise<SellerSession> {
-    const res = await fetch(`${BASE_URL}/api/auth/login-pin`, {
+    const res = await fetch(`${BASE_URL}/api/auth/login/by_pin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ organizationId, pin }),
@@ -150,6 +153,37 @@ export interface PosSession {
     locked?: boolean;
 }
 
+export function parseSessionDate(raw: string | undefined): Date | null {
+    if (!raw) return null;
+    if (raw.includes('Z') || raw.includes('+')) return new Date(raw);
+    const d = new Date(raw + 'Z');
+    return isNaN(d.getTime()) ? null : d;
+}
+
+export interface SalesPoint {
+    id: string;
+    salesPointName: string;
+    organizationId: string;
+    agencyId?: string;
+    status?: string;
+    currency?: string;
+}
+
+// Resolve a sales-point name from its ID — used by SessionGate to display a
+// human-readable label instead of the raw UUID.
+export async function getSalesPointById(session: SellerSession, salesPointId: string): Promise<SalesPoint | null> {
+    try {
+        const res = await fetch(
+            `${BASE_URL}/api/sales-points?organizationId=${session.organizationId}`,
+            { headers: { Authorization: `Bearer ${session.accessToken}` } }
+        );
+        const list = await handle<SalesPoint[]>(res);
+        return list.find((sp) => sp.id === salesPointId) ?? null;
+    } catch {
+        return null;
+    }
+}
+
 // Either a session already OPEN for this seller (e.g. they logged back in
 // mid-shift without logging out) or the one PENDING session scheduled for
 // them — the gate resumes straight into OPEN ones and only asks to "Start"
@@ -167,12 +201,36 @@ export async function getActiveOrPendingSession(session: SellerSession): Promise
     return null;
 }
 
-export async function startSession(session: SellerSession, sessionId: string): Promise<PosSession> {
+export async function startSession(session: SellerSession, sessionId: string, salesPointId?: string): Promise<PosSession> {
     const res = await fetch(`${BASE_URL}/api/sessions/${sessionId}/start`, {
         method: "POST",
         headers: { Authorization: `Bearer ${session.accessToken}` },
     });
-    return handle<PosSession>(res);
+    if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 409 && salesPointId) {
+            const openRes = await fetch(`${BASE_URL}/api/sessions`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session.accessToken}`,
+                    "X-Organization-ID": session.organizationId,
+                },
+                body: JSON.stringify({
+                    type: "POS",
+                    sellerId: session.id,
+                    salesPointId: salesPointId,
+                    organizationId: session.organizationId,
+                    openingAmount: 0,
+                }),
+            });
+            if (openRes.ok) {
+                return handle<PosSession>(openRes);
+            }
+        }
+        throw new Error(body.message || `Request failed: ${res.status}`);
+    }
+    return res.json() as Promise<PosSession>;
 }
 
 // Persists a real invoice in the backend — called once a POS payment succeeds.
